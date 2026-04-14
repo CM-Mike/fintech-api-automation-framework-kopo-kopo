@@ -1,46 +1,44 @@
-import request from 'supertest';
-import express from 'express';
+/**
+ * This test suite demonstrates "Unit Testing" of a payment validator.
+ * In a real environment, this logic would be part of the API layer.
+ */
 
-// We create a "Mock Server" inside the test so it doesn't need the internet
-const app = express();
-app.use(express.json());
+// A simple validator function representing Kopo Kopo's business logic
+const validatePaymentRequest = (payload: any, token?: string) => {
+    if (!token) return { status: 401, error: 'Unauthorized' };
+    if (payload.amount <= 0) return { status: 400, error: 'Invalid amount' };
+    if (!payload.phoneNumber.startsWith('254')) return { status: 400, error: 'Invalid country code' };
+    
+    return { status: 201, data: { id: 'k2_tx_mock', status: 'pending' } };
+};
 
-// This mimics Kopo Kopo's API behavior
-app.post('/v1/payments/initiate', (req, res) => {
-  const { amount, phoneNumber } = req.body;
-  const auth = req.headers.authorization;
+describe('Fintech Logic: Payment Validation', () => {
+    const validPayload = { phoneNumber: '254712345678', amount: 1000 };
+    const validToken = 'Bearer sk_test_123';
 
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  if (amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
-  if (phoneNumber === 'not-a-phone-number') return res.status(400).json({ message: 'Invalid phone' });
+    it('should return 201 for a valid Kenyan transaction', () => {
+        const result = validatePaymentRequest(validPayload, validToken);
+        expect(result.status).toBe(201);
+        expect(result.data?.status).toBe('pending');
+    });
 
-  res.status(201).json({ id: 'k2_tx_12345', status: 'pending' });
-});
+    it('should catch unauthorized requests (Missing Token)', () => {
+        const result = validatePaymentRequest(validPayload);
+        expect(result.status).toBe(401);
+        expect(result.error).toBe('Unauthorized');
+    });
 
-describe('Fintech API: Payment Initiation (Mocked)', () => {
-  const validToken = 'Bearer sk_test_123';
-  const validPayload = { phoneNumber: '254712345678', amount: 1000 };
+    it('should reject non-Kenyan numbers', () => {
+        const invalidPayload = { ...validPayload, phoneNumber: '256123456' }; // Uganda
+        const result = validatePaymentRequest(invalidPayload, validToken);
+        expect(result.status).toBe(400);
+        expect(result.error).toBe('Invalid country code');
+    });
 
-  it('should successfully initiate a payment', async () => {
-    const res = await request(app)
-      .post('/v1/payments/initiate')
-      .set('Authorization', validToken)
-      .send(validPayload);
-
-    expect(res.status).toBe(201);
-    expect(res.body.status).toBe('pending');
-  });
-
-  it('should return 401 if token is missing', async () => {
-    const res = await request(app).post('/v1/payments/initiate').send(validPayload);
-    expect(res.status).toBe(401);
-  });
-
-  it('should return 400 for negative amounts', async () => {
-    const res = await request(app)
-      .post('/v1/payments/initiate')
-      .set('Authorization', validToken)
-      .send({ ...validPayload, amount: -50 });
-    expect(res.status).toBe(400);
-  });
+    it('should prevent negative transaction amounts', () => {
+        const invalidPayload = { ...validPayload, amount: -50 };
+        const result = validatePaymentRequest(invalidPayload, validToken);
+        expect(result.status).toBe(400);
+        expect(result.error).toBe('Invalid amount');
+    });
 });
